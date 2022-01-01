@@ -84,8 +84,7 @@ class IPCInterface extends EventEmitter {
           // reject promise
           else {
             // reject the message's promise
-            ipcRequests[msgMap["request_id"]]
-                ?.completeError(Exception(msgMap["error"]));
+            ipcRequests[msgMap["request_id"]]?.completeError(msgMap["error"]);
             // delete the ipcRequest object
             ipcRequests.remove(msgMap["request_id"]);
           }

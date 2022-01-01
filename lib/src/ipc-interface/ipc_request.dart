@@ -1,6 +1,6 @@
 class IPCRequest<T> {
   Function(T) messageResolve;
-  Function(Exception) messageReject;
+  Function(Object) messageReject;
   dynamic args;
   String? caller;
   IPCRequest(this.messageResolve, this.messageReject, this.args) {}
@@ -13,7 +13,7 @@ class IPCRequest<T> {
     messageResolve(value);
   }
 
-  completeError(Exception err) {
+  completeError(Object err) {
     // const errHandler = new ErrorHandler();
     // const errMessage = errHandler.errorMessage(3, this.caller, this.args, err);
     messageReject(err);

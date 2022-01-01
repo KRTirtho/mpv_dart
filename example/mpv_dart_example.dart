@@ -83,6 +83,12 @@ void main() async {
     // await mpvPlayer.load("ytdl://www.youtube.com/watch?v=Fp8msa5uYsc");
     // await mpvPlayer.volume(50);
     await mpvPlayer.loadPlaylist("playlist.txt");
+    Timer.periodic(Duration(seconds: 20), (timer) async {
+      int position = await mpvPlayer.getPlaylistPosition();
+      if (position > 0) {
+        await mpvPlayer.prev();
+      }
+    });
   } catch (e, stackTrace) {
     print(e);
     print(stackTrace);

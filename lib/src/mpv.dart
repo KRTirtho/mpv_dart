@@ -79,6 +79,12 @@ extension FileFormatExtension on FileFormat {
   get name => toString().split(".").last;
 }
 
+enum PlaylistPositionChangeMode { weak, force }
+
+extension PlaylistPositionChangeModeExtension on PlaylistPositionChangeMode {
+  get name => toString().split(".").last;
+}
+
 class MPVPlayer extends EventEmitter {
   List<String> mpvArgs;
   bool debug;
@@ -1136,8 +1142,8 @@ class MPVPlayer extends EventEmitter {
           completer.complete();
         }
       } catch (e) {
-        completer.completeError(Exception(
-            _errorHandler.errorMessage(0, 'loadPlaylist()', args: [playlist])));
+        completer.completeError(
+            _errorHandler.errorMessage(0, 'loadPlaylist()', args: [playlist]));
       }
       return completer.future;
     }
@@ -1199,6 +1205,246 @@ class MPVPlayer extends EventEmitter {
       });
       return completer.future;
     });
+  }
+
+  Future<int> getPlaylistPosition1() {
+    return getProperty<int>('playlist-pos-1');
+  }
+
+  Future<bool> _changePlaylistPos({
+    PlaylistPositionChangeMode mode = PlaylistPositionChangeMode.weak,
+    bool prev = false,
+  }) async {
+    Completer<bool> completer = Completer<bool>();
+    // reject the promise if mpv is not running
+    if (!running) {
+      throw _errorHandler.errorMessage(8, 'changePlaylistPos()', args: [
+        mode.name
+      ], options: {
+        'weak': 'last song in the playlist will NOT be skipped',
+        'force': 'last song in the playlist will be skipped',
+      });
+    }
+
+    // check if there's more than one song in the playlist
+    // get the current position in the playlist
+    int position = await getPlaylistPosition1();
+
+    String trackFile = await getProperty(
+        "playlist/${prev ? (position - 1) : position}/filename");
+    // check if it was the last track in the playlist
+    // if the mode was set to weak nothing has to happen
+    // return false to show that the track was not skipped
+    if (!prev) {
+      // get the playlist size
+      int size = await getPlaylistSize();
+      if (size == position &&
+          mode == PlaylistPositionChangeMode.weak &&
+          !completer.isCompleted) {
+        completer.complete(false);
+      }
+      // if we have the last track but mode is not set to 'weak' (i.e. 'force')
+      // we can just stop the playback, that is the same
+      if (size == position && !completer.isCompleted) {
+        // stop playback
+        await stop();
+        completer.complete(true);
+      }
+    } else {
+      if (position == 0 &&
+          mode == PlaylistPositionChangeMode.weak &&
+          !completer.isCompleted) {
+        completer.complete(false);
+      }
+      // mode is not set to 'weak' but 'force'
+      if (position == 0 && !completer.isCompleted) {
+        // stop the playback
+        await stop();
+        completer.complete(true);
+      }
+    }
+
+    // continue the skipping process
+    // get the next song in the playlist for possible error messages
+
+    Socket observeSocket = await Socket.connect(
+        InternetAddress(socketURI, type: InternetAddressType.unix), 0);
+
+    await command('playlist-${prev ? 'prev' : 'next'}', [mode.name]);
+    // timeout
+    int timeout = 0;
+    // check if the file was started
+    bool started = false;
+
+    observeSocket.listen((event) {
+      timeout += 1;
+      List<String> messages = utf8.decode(event).split('\n');
+      // check every message
+      for (var message in messages) {
+        // ignore empty messages
+        if (message.isNotEmpty) {
+          Map msgMap = jsonDecode(message);
+          if (msgMap.containsKey("event")) {
+            if (msgMap["event"] == 'start-file') {
+              started = true;
+            }
+            // when the file has successfully been loaded resolve the promise
+            else if (msgMap["event"] == 'playback-restart' &&
+                started &&
+                !completer.isCompleted) {
+              observeSocket.destroy();
+              // resolve the promise
+              completer.complete(true);
+            }
+            // when the track has changed we don't need a seek event
+            else if (msgMap["event"] == 'end-file' && started) {
+              observeSocket.destroy();
+              // get the filename of the not playable song
+              completer.completeError(_errorHandler
+                  .errorMessage(0, 'changePlaylistPos()', args: [trackFile]));
+            }
+          }
+        }
+      }
+      // reject the promise if it took to long until the playback-restart happens
+      // to prevent having sockets listening forever
+      if (timeout > 10) {
+        observeSocket.destroy();
+        completer.completeError(
+            _errorHandler.errorMessage(5, 'changePlaylistPos()'));
+      }
+    });
+    return completer.future;
+  }
+
+  Future<bool> next(
+      {PlaylistPositionChangeMode mode = PlaylistPositionChangeMode.weak}) {
+    return _changePlaylistPos(prev: false, mode: mode);
+  }
+
+  Future<bool> prev(
+      {PlaylistPositionChangeMode mode = PlaylistPositionChangeMode.weak}) {
+    return _changePlaylistPos(prev: true, mode: mode);
+  }
+
+  // clear the playlist
+  Future clearPlaylist() {
+    return command('playlist-clear', []);
+  }
+
+  // remove the song at index or the current song, if index = 'current'
+  Future playlistRemove(index) {
+    return command('playlist-remove', [index]);
+  }
+
+  // Moves the song/video on position index1 to position index2
+  Future playlistMove(index1, index2) {
+    return command('playlist-move', [index1, index2]);
+  }
+
+  // shuffle the playlist
+  Future shuffle() {
+    return command('playlist-shuffle', []);
+  }
+
+  // returns the current playlist position (as a promise) 0 based
+  Future<int> getPlaylistPosition() {
+    return getProperty<int>('playlist-pos');
+  }
+
+  // jump to song in the playlist
+  //
+  // position
+  // 	the new position (0-based)
+  Future<bool> jump(int position) async {
+    Completer<bool> completer = Completer<bool>();
+    // reject the promise if mpv is not running
+    if (!running) {
+      throw _errorHandler.errorMessage(8, 'jump()');
+    }
+    // get the size of the playlist, to check if the desired position is within the playlist
+    int size = await getPlaylistSize();
+    if (position >= 0 && position < size) {
+      // get the filename of the song that is being jumped to, for a better error message if it could
+      // not be loaded
+      String filename =
+          await getProperty<String>("playlist/$position/filename");
+      // continue the skipping process
+      // get the next song in the playlist for possible error messages
+
+      Socket observeSocket = await Socket.connect(
+          InternetAddress(socketURI, type: InternetAddressType.unix), 0);
+
+      await setProperty('playlist-pos', position);
+      // timeout
+      int timeout = 0;
+      // check if the file was started
+      bool started = false;
+
+      observeSocket.listen((event) {
+        timeout += 1;
+        List<String> messages = utf8.decode(event).split('\n');
+        // check every message
+        for (var message in messages) {
+          // ignore empty messages
+          if (message.isNotEmpty) {
+            Map msgMap = jsonDecode(message);
+            if (msgMap.containsKey("event")) {
+              if (msgMap["event"] == 'start-file') {
+                started = true;
+              }
+              // when the file has successfully been loaded resolve the promise
+              else if (msgMap["event"] == 'playback-restart' &&
+                  started &&
+                  !completer.isCompleted) {
+                observeSocket.destroy();
+                // resolve the promise
+                completer.complete(true);
+              }
+              // when the track has changed we don't need a seek event
+              else if (msgMap["event"] == 'end-file' && started) {
+                observeSocket.destroy();
+                // get the filename of the not playable song
+                completer.completeError(_errorHandler
+                    .errorMessage(0, 'changePlaylistPos()', args: [filename]));
+              }
+            }
+          }
+        }
+        // reject the promise if it took to long until the playback-restart happens
+        // to prevent having sockets listening forever
+        if (timeout > 10) {
+          observeSocket.destroy();
+          completer.completeError(
+              _errorHandler.errorMessage(5, 'changePlaylistPos()'));
+        }
+      });
+    } else {
+      if (!completer.isCompleted) completer.complete(false);
+    }
+    return completer.future;
+  }
+
+  // loop
+  // int/string times
+  // 	number n - loop n times
+  // 	'inf' 	 - loop infinitely often
+  // 	'no'	 - switch loop to off
+  //
+  // if times is not set, this method will toggle the loop state, if any looping is set, either 'inf' or a fixed number it will be switched off
+  loopPlaylist(int? times) async {
+    // if times was set, use it. Times can be any number > 0, 'inf' and 'no'
+    if (times != null) {
+      return setProperty('loop-playlist', times);
+    }
+    // if times was not set, net loop toggle the mute property
+    else {
+      // get the loop status
+      // if any loop status was set, either 'inf' or a fixed number, switch loop to off
+      // if no loop status was set, switch it on to 'inf'
+      var loopStatus = await getProperty('loop-playlist');
+      return setProperty('loop-playlist', loopStatus != null ? 'inf' : 'no');
+    }
   }
   // PLAYLIST MODULE START ======>
 }
