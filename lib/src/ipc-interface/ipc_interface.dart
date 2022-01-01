@@ -34,6 +34,7 @@ class IPCInterface extends EventEmitter {
     }
     // properly close the connection
     socket?.destroy();
+    emit("socket:done");
   }
 
   // Catches any error thrown by the socket and outputs it to the console if
@@ -45,6 +46,7 @@ class IPCInterface extends EventEmitter {
       print("[MPV_DART]: Socket Error occurred");
       print(e);
     }
+    emit("socket:error");
   }
 
   // Handles the data received by MPV over the ipc socket
@@ -75,14 +77,15 @@ class IPCInterface extends EventEmitter {
           // resolve promise
           if (msgMap["error"] == 'success') {
             // resolve the request
-            ipcRequests[msgMap["request_id"]]?.resolve(msgMap["data"]);
+            ipcRequests[msgMap["request_id"]]?.complete(msgMap["data"]);
             // delete the ipcRequest object
             ipcRequests.remove(msgMap["request_id"]);
           }
           // reject promise
           else {
             // reject the message's promise
-            ipcRequests[msgMap["request_id"]]?.reject(msgMap["error"]);
+            ipcRequests[msgMap["request_id"]]
+                ?.completeError(Exception(msgMap["error"]));
             // delete the ipcRequest object
             ipcRequests.remove(msgMap["request_id"]);
           }
@@ -119,9 +122,9 @@ class IPCInterface extends EventEmitter {
     }
   }
 
-  Future<T> command<T>(String command, {List<String> args = const []}) {
+  Future<T> command<T>(String command, {List args = const []}) {
     // command list for the JSON command {'command': commandList}
-    List<String> commandList = [command, ...args];
+    List commandList = [command, ...args];
     // send it over the socket
     return send<T>(commandList);
   }
@@ -135,7 +138,7 @@ class IPCInterface extends EventEmitter {
     // create the unique ID
     int requestId = messageId;
     messageId++;
-    Map<String, dynamic> messageJson = {
+    Map messageJson = {
       "command": commands,
       "request_id": requestId,
     };
@@ -143,23 +146,25 @@ class IPCInterface extends EventEmitter {
     // create an ipcRequest object to store the required information for error messages
     // put the resolve function in the ipcRequests dictionary to call it later
     ipcRequests[requestId] =
-        IPCRequest<T>(completer.complete, completer.completeError, command);
+        IPCRequest<T>(completer.complete, completer.completeError, commands);
     var data = jsonEncode(messageJson);
     try {
       if (debug) {
         print("[MPV_DART]: Writing following data to socket:\n$data");
       }
       socket?.write(data + "\n");
-      await socket?.flush();
-    } catch (e) {
+      // await socket?.flush();
+    } catch (e, stackTrace) {
       completer.completeError(
         _errorHandler.errorMessage(
           8,
           data,
           args: ['send()'],
-          errorMessage: jsonEncode(command),
+          errorMessage: jsonEncode([commands]),
         ),
       );
+      print(e);
+      print(stackTrace);
     }
     return completer.future;
   }

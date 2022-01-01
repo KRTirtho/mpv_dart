@@ -9,6 +9,18 @@ import 'package:mpv_dart/src/ipc-interface/ipc_interface.dart';
 import 'utils.dart' as utils;
 import 'package:path/path.dart' as path;
 
+class MPVEvents {
+  static String crashed = 'crashed';
+  static String quit = 'quit';
+  static String stopped = 'stopped';
+  static String started = 'started';
+  static String paused = 'paused';
+  static String resumed = 'resumed';
+  static String seek = 'seek';
+  static String status = 'status';
+  static String timeposition = 'timeposition';
+}
+
 enum AudioFlag {
   select,
   auto,
@@ -44,20 +56,20 @@ class MPVPlayer extends EventEmitter {
   late IPCInterface socket;
   late ErrorHandler _errorHandler;
 
-  Process? mpvPlayer;
+  Process? _mpvPlayer;
 
   MPVPlayer({
     this.mpvArgs = const [],
     this.debug = false,
     this.verbose = false,
-    this.socketURI = '/tmp/node-mpv.sock',
+    this.socketURI = '/tmp/MPV_Dart.sock',
     this.audioOnly = false,
     this.autoRestart = true,
     this.timeUpdate = 1,
     this.binary,
   }) {
     socketURI =
-        Platform.isWindows ? '\\\\.\\pipe\\mpvserver' : '/tmp/node-mpv.sock';
+        Platform.isWindows ? '\\\\.\\pipe\\mpvserver' : '/tmp/MPV_Dart.sock';
 
     mpvArgs = utils.mpvArguments(audioOnly, mpvArgs);
 
@@ -70,7 +82,7 @@ class MPVPlayer extends EventEmitter {
   Map observedProperties = {};
   bool running = false;
 
-  Timer? timepositionListenerId;
+  Timer? _timepositionListenerId;
 
   // loads a file into mpv
   // mode
@@ -112,7 +124,7 @@ class MPVPlayer extends EventEmitter {
     }
     source = sourceProtocol != null ? source : path.absolute(source);
 
-    initCommandObserverSocket() async {
+    _initCommandObserverSocket() async {
       Completer completer = Completer();
       Socket observeSocket = await Socket.connect(
         InternetAddress(socketURI, type: InternetAddressType.unix),
@@ -134,13 +146,15 @@ class MPVPlayer extends EventEmitter {
       // will be output by the mpv player
       // checking whether this source can be played or not is done when
       // the source is played
-      if (mode == LoadMode.append) {
+      if (mode == LoadMode.append && !completer.isCompleted) {
         observeSocket.destroy();
         completer.complete();
       }
       // if the mode is append-play and there are already songs in the playlist
       // resolve the promise since nothing will be output
-      if (mode == LoadMode.appendPlay && playlistSize > 1) {
+      if (mode == LoadMode.appendPlay &&
+          playlistSize > 1 &&
+          !completer.isCompleted) {
         observeSocket.destroy();
         completer.complete();
       }
@@ -165,7 +179,9 @@ class MPVPlayer extends EventEmitter {
                 started = true;
               }
               // when the file has successfully been loaded resolve the promise
-              else if (msgMap["event"] == 'file-loaded' && started) {
+              else if (msgMap["event"] == 'file-loaded' &&
+                  started &&
+                  !completer.isCompleted) {
                 observeSocket.destroy();
                 // resolve the promise
                 completer.complete();
@@ -190,7 +206,7 @@ class MPVPlayer extends EventEmitter {
       }
     }
 
-    await initCommandObserverSocket();
+    await _initCommandObserverSocket();
   }
 
   // AUDIO MODULE START ====>
@@ -302,7 +318,7 @@ class MPVPlayer extends EventEmitter {
   }
 
   // send a command with arguments to mpv
-  Future<T> command<T>(String command, List<String> args) {
+  Future<T> command<T>(String command, List args) {
     return socket.command<T>(command, args: args);
   }
 
@@ -326,7 +342,7 @@ class MPVPlayer extends EventEmitter {
     // store the id into the hash map, such that it can be retrieved later if
     // the property should be unobserved
     observedProperties[propertyKey] = prop_id;
-    return command<T>('observe_property', [prop_id.toString(), propertyKey]);
+    return command<T>('observe_property', [prop_id, propertyKey]);
   }
 
   // stop observing a property
@@ -604,12 +620,12 @@ class MPVPlayer extends EventEmitter {
   // is restarted right away
   //
   // Event: close
-  closeHandler(int error_code) {
+  closeHandler() {
     // Clear all the listeners of this module
     // mpvPlayer.removeAllListeners('close');
     // mpvPlayer.removeAllListeners('error');
     // mpvPlayer.removeAllListeners('message');
-    timepositionListenerId?.cancel();
+    _timepositionListenerId?.cancel();
 
     // destroy the socket because a new one will be created
     socket.socket?.destroy();
@@ -617,56 +633,32 @@ class MPVPlayer extends EventEmitter {
     // unset the running flag
     running = false;
 
-    // check the error code
-    switch (error_code) {
-      // quit by the user on purpose
-      case 0:
-        emit('quit');
-        if (debug || verbose) {
-          print('[Node-MPV]: MPV was quit by the user');
-        }
-        break;
-      // crashed
-      case 4:
-        // restart if auto restart enabled
-        if (autoRestart) {
-          if (debug || verbose) {
-            print('[Node-MPV]: MPV Player has crashed, tying to restart');
-          }
+    // restart if auto restart enabled
+    if (autoRestart) {
+      if (debug || verbose) {
+        print('[MPV_Dart]: MPV Player has crashed, tying to restart');
+      }
 
-          // restart mpv
-          start().then((val) {
-            // emit crashed event
-            emit('crashed');
-            if (debug || verbose) {
-              print('[Node-MPV]: Restarted MPV Player');
-            }
-          })
-              // report the error if one occurs
-              .catchError((error) {
-            print(error);
-          });
-        }
-        // disabled auto restart
-        else {
-          // emit crashed event
-          emit('crashed');
-          if (debug || verbose) {
-            print('[Node-MPV]: MPV Player has crashed');
-          }
-        }
-        break;
-      default:
+      // restart mpv
+      start().then((val) {
+        // emit crashed event
+        emit(MPVEvents.crashed);
         if (debug || verbose) {
-          print(
-              '[Node-MPV]: MPV player was terminated with an unknown error code: $error_code');
+          print('[MPV_Dart]: Restarted MPV Player');
         }
+      })
+          // report the error if one occurs
+          .catchError((error) {
+        print(error);
+      });
     }
-  }
-
-  void errorHandler(Error error) {
-    if (debug) {
-      print(error);
+    // disabled auto restart
+    else {
+      // emit crashed event
+      emit(MPVEvents.crashed);
+      if (debug || verbose) {
+        print('[MPV_Dart]: MPV Player has crashed');
+      }
     }
   }
 
@@ -697,28 +689,28 @@ class MPVPlayer extends EventEmitter {
             print('Event: stopped');
           }
           // emit stopped event
-          emit('stopped');
+          emit(MPVEvents.stopped);
           break;
         case 'playback-restart':
           if (verbose) {
             print('Event: start');
           }
           // emit play event
-          emit('started');
+          emit(MPVEvents.started);
           break;
         case 'pause':
           if (verbose) {
             print('Event: pause');
           }
           // emit paused event
-          emit('paused');
+          emit(MPVEvents.paused);
           break;
         case 'unpause':
           if (verbose) {
             print('Event: unpause');
           }
           // emit unpaused event
-          emit('resumed');
+          emit(MPVEvents.resumed);
           break;
         case 'seek':
           if (verbose) {
@@ -775,7 +767,7 @@ class MPVPlayer extends EventEmitter {
               // socket destruction and event emittion
               .then((times) {
             observeSocket.destroy();
-            emit('seek', (times));
+            emit(MPVEvents.seek, (times));
           })
               // handle any rejection of the promise
               .catchError((status) {
@@ -793,13 +785,13 @@ class MPVPlayer extends EventEmitter {
             currentTimePos = message["data"];
           } else {
             // emit a status event
-            emit('status',
+            emit(MPVEvents.status,
                 {'property': message["name"], 'value': message["data"]});
             // output if verbose
             if (verbose) {
-              print('[Node-MPV]: Event: status');
+              print('[MPV_Dart]: Event: status');
               print(
-                  '[Node-MPV]: Property change: {$message["name"]} - ${message["data"]}');
+                  '[MPV_Dart]: Property change: {$message["name"]} - ${message["data"]}');
             }
           }
           break;
@@ -818,33 +810,32 @@ class MPVPlayer extends EventEmitter {
 
   Future<bool> _isInstanceRunning() async {
     Completer<bool> completer = Completer<bool>();
+    try {
+      Socket sock = await Socket.connect(
+          InternetAddress(socketURI, type: InternetAddressType.unix), 0);
 
-    Socket sock = await Socket.connect(
-        InternetAddress(socketURI, type: InternetAddressType.unix), 0);
-
-    sock.listen(
-      (event) {
-        try {
+      sock.listen(
+        (event) {
           Map res = jsonDecode(utf8.decode(event));
           completer.complete(res.containsKey("data") &&
               res.containsKey("error") &&
               res["error"] == "success");
-        } catch (e) {
-          completer.complete(false);
-        }
-      },
-      onError: () {},
-    );
+          sock.destroy();
+        },
+      );
 
-    sock.writeln(jsonEncode({
-      'command': ['get_property', 'mpv-version']
-    }));
+      sock.writeln(jsonEncode({
+        'command': ['get_property', 'mpv-version']
+      }));
 
-    await sock.flush();
+      await sock.flush();
+    } catch (e) {
+      completer.complete(false);
+    }
     return completer.future;
   }
 
-  Future<void> _initMPVSubProcess(
+  Future<void> _createMPVSubProcess(
     String ipcCommand,
     List<String> mpv_args,
   ) async {
@@ -855,7 +846,7 @@ class MPVPlayer extends EventEmitter {
     mpvArgs.add(ipcCommand + '=' + socketURI);
     // spawns the mpv player
 
-    mpvPlayer = await Process.start(
+    _mpvPlayer = await Process.start(
         binary != null ? binary! : 'mpv', [...mpvArgs, ...mpv_args]);
     // callback to listen to stdout + stderr to see, if MPV could bind the IPC socket
     stdCallback(event) {
@@ -879,17 +870,17 @@ class MPVPlayer extends EventEmitter {
     }
 
     // listen to stdout to check if the IPC socket is ready
-    mpvPlayer?.stdout.listen(stdCallback);
+    _mpvPlayer?.stdout.listen(stdCallback);
     // in some cases on windows, if you pipe your output to a file or another command, the messages that
     // are usually output via stdout are output via stderr instead. That's why it's required to listen
     // for the same messages on stderr as well
-    mpvPlayer?.stderr.listen(stdCallback);
+    _mpvPlayer?.stderr.listen(stdCallback);
 
     return completer.future;
   }
 
   Future<void> _checkMPVIdleMode() async {
-    Completer completer = Completer();
+    Completer completer = Completer<bool>();
 
     // check if mpv went into idle mode and is ready to receive commands
     // Set up the socket connection
@@ -903,7 +894,7 @@ class MPVPlayer extends EventEmitter {
       'command': ['get_property', 'idle-active']
     }));
     await observeSocket.flush();
-    if (debug || verbose) print('[Node-MPV] sending stimulus');
+    if (debug || verbose) print('[MPV_Dart] sending stimulus');
 
     observeSocket.listen((event) {
       // parse the messages from the socket
@@ -921,20 +912,22 @@ class MPVPlayer extends EventEmitter {
           //     through the constructor. In that case mpv never goes into idle mode
           if (msgMap.containsKey("event") &&
               ['idle', 'idle-active', 'file-loaded']
-                  .contains(msgMap["event"])) {
-            if (debug || verbose) print('[Node-MPV] idling');
+                  .contains(msgMap["event"]) &&
+              !completer.isCompleted) {
+            if (debug || verbose) print('[MPV_Dart] idling');
             observeSocket.destroy();
-            completer.complete();
+            completer.complete(true);
           }
           // check our stimulus response
           // Check for our stimulus with idle-active
           if (msgMap.containsKey("data") &&
               msgMap.containsKey("data") &&
-              msgMap["error"] == 'success') {
+              msgMap["error"] == 'success' &&
+              !completer.isCompleted) {
             if (debug || verbose)
-              print('[Node-MPV] stimulus received ${msgMap["data"]}');
+              print('[MPV_Dart] stimulus received ${msgMap["data"]}');
             observeSocket.destroy();
-            completer.complete();
+            completer.complete(true);
           }
         }
       });
@@ -967,7 +960,7 @@ class MPVPlayer extends EventEmitter {
 
     // see if there's already an mpv instance running on the specified socket
 
-    var instance_running = await _isInstanceRunning();
+    bool instance_running = await _isInstanceRunning();
 
     // these steps are only necessary if a new MPV instance is created, if the module is hooking into an existing
     // one, there's no need to start a new instance
@@ -981,18 +974,18 @@ class MPVPlayer extends EventEmitter {
       // check for the corrrect ipc command
       const ipcCommand = "--input-ipc-server";
 
-      await _initMPVSubProcess(ipcCommand, mpv_args);
-
+      await _createMPVSubProcess(ipcCommand, mpv_args);
       await _checkMPVIdleMode();
+      instance_running = true;
     }
     // if the module is hooking into an existing instance of MPV, we still ned to set up the
     // socket connection for the module
     else {
       await socket.connect(socketURI);
       if (debug || verbose) {
-        print("[Node-MPV]: Detected running MPV instance at ${socketURI}");
+        print("[MPV_Dart]: Detected running MPV instance at ${socketURI}");
         print(
-            '[Node-MPV]: Hooked into existing MPV instance without starting a new one');
+            '[MPV_Dart]: Hooked into existing MPV instance without starting a new one');
       }
     }
 
@@ -1007,12 +1000,12 @@ class MPVPlayer extends EventEmitter {
       'time-pos', /* 0 */
     );
 
-    timepositionListenerId =
+    _timepositionListenerId =
         Timer.periodic(Duration(seconds: timeUpdate * 1000), (timer) async {
       bool paused = await isPaused().catchError((err) {
         if (debug) {
           print(
-              '[Node-MPV] timeposition listener cannot retrieve isPaused $err');
+              '[MPV_Dart] timeposition listener cannot retrieve isPaused $err');
         }
         if (err.code == 8) {
           // mpv is not running but the interval was not cleaned out
@@ -1023,7 +1016,7 @@ class MPVPlayer extends EventEmitter {
         }
       });
       if (!paused && currentTimePos != null) {
-        emit("timeposition", currentTimePos);
+        emit(MPVEvents.timeposition, currentTimePos);
       }
     });
 
@@ -1039,28 +1032,21 @@ class MPVPlayer extends EventEmitter {
 
     // ### Events ###
 
-    // events linked to the mpv instance can only be set up, if mpv was started by node js iself
+    // events linked to the mpv instance can only be set up, if mpv was started by node js itself
     // it's not possible for an mpv instance started from a different process
     if (!instance_running) {
-      // Close Event. Restarts MPV
-      int? exitCode = await mpvPlayer?.exitCode;
-
-      if (exitCode != null) {
-        closeHandler(exitCode);
-      }
-
-      // Output any errors thrown by MPV
-      // mpvPlayer.on('error', (error) => this.errorHandler(error));
+      // RECURSIVE METHOD (KEEP AN EYE)
+      closeHandler();
     }
-    // if the module is hooking into an existing and running istance of mpv we need an event listener
+    // if the module is hooking into an existing and running instance of mpv we need an event listener
     // that is attached directly to the net socket, to clear the interval for the time position
     else {
-      socket.socket?.listen((event) {}, onDone: () {
-        timepositionListenerId?.cancel();
+      socket.on("socket:done", null, (e, c) {
+        _timepositionListenerId?.cancel();
         // it's kind of impossible to tell if an external instance was properly quit or has crashed
         // that's why both events are emitted
-        emit('crashed');
-        emit('quit');
+        emit(MPVEvents.crashed);
+        emit(MPVEvents.quit);
       });
     }
 
@@ -1086,7 +1072,7 @@ class MPVPlayer extends EventEmitter {
     // this.mpvPlayer.removeAllListeners('close');
     // this.mpvPlayer.removeAllListeners('error');
     // this.mpvPlayer.removeAllListeners('message');
-    timepositionListenerId?.cancel();
+    _timepositionListenerId?.cancel();
     // send the quit message to MPV
     await command("quit", []);
     // Quit the socket

@@ -76,9 +76,12 @@ List<String> observedProperties(bool audioOnlyOption) {
 // example: mute(), load() ...
 String getCaller() {
   // get the top most caller of the function stack for error message purposes
-  RegExp regExp = RegExp("at\s\w*[^getCaller]\.\w*\s");
-  var stackMatch = regExp.allMatches(Error().stackTrace.toString()).toList();
-  var caller = "${stackMatch.toList().last.group(0)?.split('.')[1].trim()}()";
+  RegExp regExp = RegExp(r"#\d*.*\w+\.?\w*.*\(");
+  RegExp garbage = RegExp(r"#?\d?\s*[^\w^\d^\.]*");
+  var stackStr = StackTrace.current.toString();
+  var stackMatch = regExp.allMatches(stackStr).toList().asMap().entries.map(
+      (m) => "${m.key}. ${m.value.group(0)?.replaceAll(garbage, "").trim()}()");
+  var caller = "[${stackMatch.join(", ")}]";
   return caller;
 }
 
