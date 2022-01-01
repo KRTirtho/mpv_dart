@@ -80,8 +80,9 @@ void main() async {
       ],
     );
     await mpvPlayer.start();
-    await mpvPlayer.load("ytdl://www.youtube.com/watch?v=Fp8msa5uYsc");
-    await mpvPlayer.volume(50);
+    // await mpvPlayer.load("ytdl://www.youtube.com/watch?v=Fp8msa5uYsc");
+    // await mpvPlayer.volume(50);
+    await mpvPlayer.loadPlaylist("playlist.txt");
   } catch (e, stackTrace) {
     print(e);
     print(stackTrace);

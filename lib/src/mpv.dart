@@ -9,7 +9,7 @@ import 'package:mpv_dart/src/ipc-interface/ipc_interface.dart';
 import 'utils.dart' as utils;
 import 'package:path/path.dart' as path;
 
-class MPVEvents {
+abstract class MPVEvents {
   static String crashed = 'crashed';
   static String quit = 'quit';
   static String stopped = 'stopped';
@@ -27,10 +27,23 @@ enum AudioFlag {
   cached,
 }
 
+extension AudioFlagExtension on AudioFlag {
+  get name => toString().split(".").last;
+}
+
 enum SeekMode {
   absolute,
   relative,
   appendPlay,
+}
+
+extension SeekModeExtension on SeekMode {
+  static final Map _values = {
+    SeekMode.absolute: "absolute",
+    SeekMode.appendPlay: "append-play",
+    SeekMode.relative: "relative",
+  };
+  get name => _values[toString().split(".").last];
 }
 
 enum LoadMode {
@@ -39,9 +52,31 @@ enum LoadMode {
   appendPlay,
 }
 
+extension LoadModeExtension on LoadMode {
+  static final Map _values = {
+    LoadMode.append: "append",
+    LoadMode.appendPlay: "append-play",
+    LoadMode.replace: "replace",
+  };
+  get name => _values[toString().split(".").last];
+}
+
+enum LoadPlaylistMode {
+  replace,
+  append,
+}
+
+extension LoadPlaylistModeExtension on LoadPlaylistMode {
+  get name => toString().split(".").last;
+}
+
 enum FileFormat {
   full,
   stripped,
+}
+
+extension FileFormatExtension on FileFormat {
+  get name => toString().split(".").last;
 }
 
 class MPVPlayer extends EventEmitter {
@@ -93,7 +128,8 @@ class MPVPlayer extends EventEmitter {
   // options
   // further options
   Future<void> load(String source,
-      {mode = 'replace', List<String> options = const []}) async {
+      {LoadMode mode = LoadMode.replace,
+      List<String> options = const []}) async {
     // check if this was called via load() or append() for error handling purposes
     String caller = utils.getCaller();
 
@@ -101,7 +137,7 @@ class MPVPlayer extends EventEmitter {
     if (!running) {
       throw (_errorHandler.errorMessage(8, caller, args: [
         source,
-        mode,
+        mode.name,
         options
       ], options: {
         'replace': 'Replace the currently playing title',
@@ -118,7 +154,7 @@ class MPVPlayer extends EventEmitter {
     String? sourceProtocol = utils.extractProtocolFromSource(source);
     if (sourceProtocol != null && !utils.validateProtocol(sourceProtocol)) {
       throw (_errorHandler.errorMessage(9, caller,
-          args: [source, mode, options],
+          args: [source, mode.name, options],
           errorMessage:
               'See https://mpv.io/manual/stable/#protocols for supported protocols'));
     }
@@ -135,7 +171,7 @@ class MPVPlayer extends EventEmitter {
         'loadfile',
         [
           source,
-          mode,
+          mode.name,
           options.join(","),
         ],
       );
@@ -221,18 +257,7 @@ class MPVPlayer extends EventEmitter {
     List<String> args = [file];
     // add the flag if specified
     if (flag != null) {
-      String flagValue;
-      switch (flag) {
-        case AudioFlag.auto:
-          flagValue = 'auto';
-          break;
-        case AudioFlag.cached:
-          flagValue = 'cached';
-          break;
-        default:
-          flagValue = 'select';
-      }
-      args = [...args, flagValue];
+      args = [...args, flag.name];
     }
 
     // add the title if specified
@@ -443,19 +468,7 @@ class MPVPlayer extends EventEmitter {
     Socket observeSocket = await Socket.connect(
         InternetAddress(socketURI, type: InternetAddressType.unix), 0);
 
-    String modeStr;
-    switch (mode) {
-      case SeekMode.absolute:
-        modeStr = "absolute";
-        break;
-      case SeekMode.relative:
-        modeStr = "relative";
-        break;
-      default:
-        modeStr = "append-play";
-    }
-
-    await command<Map>('seek', [seconds.toString(), modeStr, 'exact']);
+    await command<Map>('seek', [seconds.toString(), mode.name, 'exact']);
 
     observeSocket.listen((event) {
       var messages = utf8.decode(event).split("\n");
@@ -1092,6 +1105,100 @@ class MPVPlayer extends EventEmitter {
   // PLAYLIST MODULE START ======>
   Future<int> getPlaylistSize() {
     return getProperty<int>('playlist-count');
+  }
+
+  // load a playlist file
+  // mode
+  // replace  replace current playlist
+  // append append to current playist
+  Future<void> loadPlaylist(String playlist,
+      {LoadPlaylistMode mode = LoadPlaylistMode.replace}) async {
+    playlist = path.joinAll([path.current, playlist]);
+    checkStat() async {
+      Completer completer = Completer();
+      try {
+        // check if mpv is running at all and reject the promise if not
+        if (!running) {
+          completer.completeError(
+              _errorHandler.errorMessage(8, 'loadPlaylist()', args: [
+            playlist,
+            mode.name
+          ], options: {
+            'replace': 'replace the current playlist (default)',
+            'append': 'append to the current playlist'
+          }));
+        }
+
+        // check if the playlistfile exists
+        FileStat fileStat = await FileStat.stat(playlist);
+        print("CHECK STAT ${playlist}");
+        if (fileStat.type == FileSystemEntityType.file) {
+          completer.complete();
+        }
+      } catch (e) {
+        completer.completeError(Exception(
+            _errorHandler.errorMessage(0, 'loadPlaylist()', args: [playlist])));
+      }
+      return completer.future;
+    }
+
+    return checkStat().then((value) async {
+      Completer completer = Completer();
+      Socket observeSocket = await Socket.connect(
+          InternetAddress(socketURI, type: InternetAddressType.unix), 0);
+
+      await command('loadlist', [playlist, mode.name]);
+      if (mode == LoadPlaylistMode.append && !completer.isCompleted) {
+        observeSocket.destroy();
+        completer.complete();
+      }
+      // timeout
+      int timeout = 0;
+      // check if the file was started
+      bool started = false;
+
+      observeSocket.listen((event) {
+        timeout += 1;
+        List<String> messages = utf8.decode(event).split('\n');
+        // check every message
+        for (var message in messages) {
+          // ignore empty messages
+          if (message.isNotEmpty) {
+            Map msgMap = jsonDecode(message);
+            if (msgMap.containsKey("event")) {
+              if (msgMap["event"] == 'start-file') {
+                started = true;
+              }
+              // when the file has successfully been loaded resolve the promise
+              else if (msgMap["event"] == 'file-loaded' &&
+                  started &&
+                  !completer.isCompleted) {
+                observeSocket.destroy();
+                // resolve the promise
+                completer.complete();
+              }
+              // when the track has changed we don't need a seek event
+              else if (msgMap["event"] == 'end-file' && started) {
+                observeSocket.destroy();
+                // get the filename of the not playable song
+                getProperty("playlist/0/filename").then((filename) {
+                  return completer.complete(_errorHandler
+                      .errorMessage(0, 'loadPlaylist()', args: [filename]));
+                });
+              }
+            }
+          }
+        }
+        // reject the promise if it took to long until the playback-restart happens
+        // to prevent having sockets listening forever
+        if (timeout > 10) {
+          observeSocket.destroy();
+          completer
+              .completeError(_errorHandler.errorMessage(5, 'loadPlaylist()'));
+        }
+      });
+      return completer.future;
+    });
   }
   // PLAYLIST MODULE START ======>
 }
