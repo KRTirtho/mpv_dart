@@ -68,12 +68,11 @@ List<String> observedProperties(bool audioOnlyOption) {
   return audioOnlyOption ? basicObserved : basicObserved + observedVideo;
 }
 
-// searches the function stack for the topmost mpv function that was called
-// and returns it
-//
-// @return
-// name of the topmost mpv function on the function stack with added ()
-// example: mute(), load() ...
+/// searches the function stack for the topmost mpv function that was called and returns it
+///
+/// @return
+/// name of the topmost mpv function on the function stack with added ()
+/// example: mute(), load() ...
 String getCaller() {
   // get the top most caller of the function stack for error message purposes
   RegExp regExp = RegExp(r"#\d*.*\w+\.?\w*.*\(");
@@ -89,12 +88,8 @@ String? extractProtocolFromSource(String source) {
   return !source.contains('://') ? null : source.split('://')[0];
 }
 
-// checks if a given protocol is supported
-// @param protocol
-// 		protocol string, e.g. "http"
-//
-// @returns
-// 		boolean if the protocol is supported by mpv
+/// checks if a given protocol is supported\
+/// @param protocol - protocol string, e.g. "http"
 bool validateProtocol(String protocol) {
   return [
     "appending",
@@ -121,16 +116,13 @@ bool validateProtocol(String protocol) {
   ].contains(protocol);
 }
 
-// takes an options list consisting of strings of the following pattern
-//      option=value
-//   => ["option1=value1", "option2=value2"]
-// and formats into a JSON object such that the mpv JSON api accepts it
-//   => {"option1": "value1", "option2": "value2"}
-// @param options
-// list of options
-//
-// @return
-// correctly formatted JSON object with the options
+/// takes an options list consisting of strings of the following pattern\
+/// `option=value` => e.g `["option1=value1", "option2=value2"]`\
+/// and formats into a JSON object such that the mpv JSON api accepts it\
+///   => `{"option1": "value1", "option2": "value2"}`\
+/// @param `options` - list of options
+///
+/// @returns  correctly formatted JSON object with the options
 Map formatOptions(List<String> options) {
   // JSON Options object
   Map optionJSON = {};

@@ -125,14 +125,7 @@ class MPVPlayer extends EventEmitter {
 
   Timer? _timepositionListenerId;
 
-  // loads a file into mpv
-  // mode
-  // replace          replace current video
-  // append          append to playlist
-  // append-play  append to playlist and play, if the playlist was empty
-  //
-  // options
-  // further options
+  /// loads a file into mpv
   Future<void> load(String source,
       {LoadMode mode = LoadMode.replace,
       List<String> options = const []}) async {
@@ -253,11 +246,6 @@ class MPVPlayer extends EventEmitter {
 
   // AUDIO MODULE START ====>
 
-  // add audio track
-  // file path to the audio file
-  // flag select / auto /cached
-  // title subtitle title in the UI
-  // lang subitlte language
   Future<void> addAudioTrack(
       String file, AddMediaFlag? flag, String? title, String? lang) {
     List<String> args = [
@@ -282,47 +270,48 @@ class MPVPlayer extends EventEmitter {
     return command<void>('audio-add', args);
   }
 
-  // delete the audio track specified by the id
+  /// delete the audio track specified by the id
   Future<void> removeAudioTrack(String id) {
     return command<void>('audio-remove', [id]);
   }
 
-  // selects the audio track
+  /// selects the audio track
   Future<void> selectAudioTrack(String id) {
     return socket.setProperty('audio', id);
   }
 
-  // cycles through the audio track
+  /// cycles through the audio track
   Future<void> cycleAudioTracks() {
     return socket.cycleProperty('audio');
   }
 
-  // adjusts the timing of the audio track
+  /// adjusts the timing of the audio track
   Future<void> adjustAudioTiming(int seconds) {
     return socket.setProperty('audio-delay', seconds);
   }
 
-  // adjust the playback speed
-  // factor  0.01 - 100
+  /// adjust the playback speed\
+  /// factor  `0.01 - 100`
   Future<void> speed(double factor) {
     return socket.setProperty('speed', factor);
   }
   // AUDIO MODULE END ====>
 
   // COMMANDS MODULE START ====>
-  // will send a get request for the specified property
-  // if no idea is provided this will return a promise
-  // if an id is provied the answer will come via a 'getrequest' event containing the id and data
+  /// will send a get request for the specified property\
+  /// if no `id` is provided this will return a promise\
+  /// if an `id` is provided the answer will come via a `'getrequest'`
+  /// event containing the `id` and `data`
   Future<T> getProperty<T>(property) {
     return socket.getProperty<T>(property);
   }
 
-  // set a property specified by the mpv API
+  /// set a property specified by the mpv API
   Future<void> setProperty(property, value) {
     return socket.setProperty(property, value);
   }
 
-  // sets all properties defined in the properties Json object
+  /// sets all properties defined in the properties Json object
   Future<void> setMultipleProperties(Map properties) async {
     // check if the player is running
     if (running) {
@@ -335,39 +324,39 @@ class MPVPlayer extends EventEmitter {
     }
   }
 
-  // adds the value to the property
+  /// adds the value to the property
   Future<void> addProperty(property, value) {
     return socket.addProperty(property, value);
   }
 
-  // multiplies the specified property by the value
+  /// multiplies the specified property by the value
   Future<void> multiplyProperty(property, value) {
     return socket.multiplyProperty(property, value);
   }
 
-  // cycles a arbitrary property
+  /// cycles a arbitrary property
   Future<void> cycleProperty(property) {
     return socket.cycleProperty(property);
   }
 
-  // send a command with arguments to mpv
+  /// send a command with arguments to mpv
   Future<T> command<T>(String command, List args) {
     return socket.command<T>(command, args: args);
   }
 
-  // sends a command specified by a JSON object to mpv
+  /// sends a command specified by a JSON object to mpv
   Future<void> commandJSON(Map command) {
     return socket.freeCommand(jsonEncode(command));
   }
 
-  // send a freely writeable command to mpv.
-  // the required trailing \n will be added
+  /// send a freely writeable command to mpv\
+  /// the required trailing \n will be added
   Future<void> freeCommand(String command) {
     return socket.freeCommand(command);
   }
 
-  // observe a property for changes
-  // will be added to event for property changes
+  /// observe a property for changes\
+  /// will be added to event for property changes
   Future<T> observeProperty<T>(String propertyKey) {
     // create the id assigned with this property
     // +1 because time-pos (which has the id 0) is not included in this object
@@ -378,7 +367,7 @@ class MPVPlayer extends EventEmitter {
     return command<T>('observe_property', [prop_id, propertyKey]);
   }
 
-  // stop observing a property
+  /// stop observing a property
   Future<T> unobserveProperty<T>(String propertyKey) {
     // retrieve the id associated with this property
     var prop_id = observedProperties[propertyKey];
@@ -402,6 +391,7 @@ class MPVPlayer extends EventEmitter {
     return setProperty('pause', false);
   }
 
+  // play
   Future<void> play() async {
     var idle = await getProperty<bool>('idle-active');
     var playlistSize = await getPlaylistSize();
@@ -452,24 +442,21 @@ class MPVPlayer extends EventEmitter {
     return command('stop', []);
   }
 
-  Future<void> volume(value) {
+  /// volume control values `0-100`
+  Future<void> volume(double value) {
     return setProperty('volume', value);
   }
 
-  Future<void> adjustVolume(value) {
-    return addProperty('volume', value);
-  }
-
-  // mute
-  // bool set
-  // 	true mutes
-  // 	false unmutes
-  // 	Not setting set toggles the mute state
+  /// mute\
+  /// bool `should` ->\
+  /// 	`true` mutes\
+  /// 	`false` unmutes\
+  /// 	Not setting set toggles the mute state
   Future<void> mute(bool? should) {
     return should != null ? setProperty('mute', should) : cycleProperty('mute');
   }
 
-  Future<void> seek(double seconds, SeekMode mode) async {
+  Future<void> seek(double seconds, {SeekMode mode = SeekMode.relative}) async {
     // tracks if the seek event has been emitted
     bool seekEventStarted = false;
 
@@ -498,18 +485,20 @@ class MPVPlayer extends EventEmitter {
     });
   }
 
-  // go to position of the song
+  /// go to position of the song
   Future<void> goToPosition(double seconds) {
-    return seek(seconds, SeekMode.absolute);
+    return seek(seconds, mode: SeekMode.absolute);
   }
 
-  // loop
-  // int/string times
-  // 	number n - loop n times
-  // 	'inf' 	 - loop infinitely often
-  // 	'no'	 - switch loop to off
-  //
-  // if times is not set, this method will toggle the loop state, if any looping is set, either 'inf' or a fixed number it will be switched off
+  /// loop
+  /// {int|String} times->\
+  /// 	number n - loop n times\
+  /// 	'inf' 	 - loop infinitely often\
+  /// 	'no'	 - switch loop to off
+  ///
+  /// if times is not set, this method will toggle the loop state, if any
+  /// looping is set, either 'inf' or a fixed number it will be switched
+  /// off
   Future<void> loop(times) async {
     // if times was set, use it. Times can be any number > 0, 'inf' and 'no'
     if (times != null) {
@@ -527,101 +516,75 @@ class MPVPlayer extends EventEmitter {
   // CONTROLS MODULE END ====>
 
   // INFORMATION MODULE START =====>
-  // Shows if the player is muted
-  //
-  // @return {promise}
+  /// Shows if the player is muted
   Future<bool> isMuted() {
     return getProperty<bool>('mute');
   }
 
-  // Shows if the player is paused
-  //
-  // @return {promise}
+  /// Shows if the player is paused
   Future<bool> isPaused() {
     return getProperty<bool>('pause');
   }
 
-  // Shows if the current title is seekable or not
-  // Not fully buffered streams are not for example
-  //
-  // @return {promise}
+  /// Shows if the current title is seekable or not\
+  /// Not fully buffered streams are not for example
   Future<bool> isSeekable() {
     return getProperty<bool>('seekable');
   }
 
-  // Duration of the currently playing song if available
-  //
-  // @return {promise}
+  /// Duration of the currently playing song if available
   Future<double> getDuration() {
     return getProperty<double>('duration');
   }
 
-  // Current time position of the currently playing song
-  //
-  // @return {promise}
+  /// Current time position of the currently playing song
   Future<double> getTimePosition() {
     return getProperty<double>('time-pos');
   }
 
-  // Current time position (in percent) of the currently playing song
-  //
-  // @return {promise}
+  /// Current time position (in percent) of the currently playing song
   Future<double> getPercentPosition() {
     return getProperty<double>('percent-pos');
   }
 
-  // Remaining time for the currently playing song, if available
-  //
-  // @return {promise}
+  /// Remaining time for the currently playing song, if available
   Future<double> getTimeRemaining() {
     return getProperty<double>('time-remaining');
   }
 
-  // Returns the available metadata for the current track. The output is very dependant
-  // on the loaded file
-  //
-  // @return {promise}
+  /// Returns the available metadata for the current track. The output is
+  /// very dependant  on the loaded file
   Future<Map> getMetadata() {
     return getProperty<Map>('metadata');
   }
 
-  // Title of the currently playing song. Might be unavailable
-  //
-  // @return {promise}
+  /// Title of the currently playing song. Might be unavailable
   Future<String> getTitle() {
     return getProperty<String>('media-title');
   }
 
-  // Returns the artist of the current song if available
-  //
-  // @return {promise}
+  /// Returns the artist of the current song if available
   Future getArtist() async {
     var metadata = await getMetadata();
     return metadata["artist"];
   }
 
-  // Returns the album title of the current song if available
-  //
-  // @return {promise}
+  /// Returns the album title of the current song if available
   Future getAlbum() async {
     var metadata = await getMetadata();
     return metadata["album"];
   }
 
-  // Returns the year of the current song if available
-  //
-  // @return {promise}
+  /// Returns the year of the current song if available
   Future getYear() async {
     var metadata = await getMetadata();
     return metadata["date"];
   }
 
-  // Returns the filename / url of the current track
-  //
-  // full     - full path or url
-  // stripped - stripped path missing the base
-  //
-  // @return {promise}
+  /// Returns the filename/url of the current track
+  ///
+  /// `full`     - full path or url
+  /// `stripped` - stripped path missing the base
   Future<String> getFilename({FileFormat format = FileFormat.full}) {
     // get the information
     return getProperty<String>(
@@ -641,7 +604,7 @@ class MPVPlayer extends EventEmitter {
   // is restarted right away
   //
   // Event: close
-  closeHandler() {
+  _closeHandler() {
     // Clear all the listeners of this module
     // mpvPlayer.removeAllListeners('close');
     // mpvPlayer.removeAllListeners('error');
@@ -700,7 +663,7 @@ class MPVPlayer extends EventEmitter {
   // JSON message from MPV
   //
   // Event: message
-  messageHandler(Map message) {
+  _messageHandler(Map message) {
     // handle MPV event messages
     if (message.containsKey("event")) {
       // Handle the different event types
@@ -954,22 +917,23 @@ class MPVPlayer extends EventEmitter {
     return completer.future;
   }
 
-  // Starts the MPV player process
-  //
-  // After MPV is started the function listens to the spawned MPV child proecesses'
-  // stdout for see whether it could create and bind the IPC socket or not.
-  // If possible an ipcInterface is created to handle the socket communication
-  //
-  // Observes the properties defined in the observed object
-  // Sets up the event handlers
-  //
-  // mpv_args
-  // 	arguments that are passed to mpv on start up
-  //
-  // @return
-  // Promise that is resolved when everything went fine or rejected when an
-  // error occured
-  //
+  /// Starts the MPV player process
+  ///
+  /// After MPV is started the function listens to the spawned MPV child
+  /// processes
+  /// stdout for see whether it could create and bind the IPC socket or
+  /// not.
+  /// If possible an ipcInterface is created to handle the socket
+  /// communication
+  ///
+  /// Observes the properties defined in the observed object\
+  /// Sets up the event handlers
+  ///
+  /// @param `mpv_args` -	arguments that are passed to mpv on start up
+  ///
+  /// @return
+  /// Promise that is resolved when everything went fine or rejected when
+  /// an error occurred
   Future<void> start({List<String> mpv_args = const []}) async {
     // check if mpv is already running
 
@@ -1055,7 +1019,7 @@ class MPVPlayer extends EventEmitter {
     // it's not possible for an mpv instance started from a different process
     if (!instance_running) {
       // RECURSIVE METHOD (KEEP AN EYE)
-      closeHandler();
+      _closeHandler();
     }
     // if the module is hooking into an existing and running instance of mpv we need an event listener
     // that is attached directly to the net socket, to clear the interval for the time position
@@ -1071,7 +1035,7 @@ class MPVPlayer extends EventEmitter {
 
     // Handle the JSON messages received from MPV via the ipcInterface
     socket.on('message', null, (message, c) {
-      messageHandler(message.eventData as Map);
+      _messageHandler(message.eventData as Map);
     });
 
     // set the running flag
@@ -1081,11 +1045,11 @@ class MPVPlayer extends EventEmitter {
     return;
   }
 
-  // Quits the MPV player
-  //
-  // All event handlers are unbound (thus preventing the close event from
-  // restarting MPV
-  // The socket is destroyed
+  /// Quits the MPV player
+  ///
+  /// All event handlers are unbound (thus preventing the close event from
+  /// restarting MPV\
+  /// The socket is destroyed
   Future<void> quit() async {
     // Clear all the listeners of this module
     // this.mpvPlayer.removeAllListeners('close');
@@ -1100,9 +1064,7 @@ class MPVPlayer extends EventEmitter {
     running = false;
   }
 
-  // Shows whether mpv is running or not
-  //
-  // @return {boolean}
+  /// Shows whether mpv is running or not
   isRunning() {
     return running;
   }
@@ -1113,10 +1075,10 @@ class MPVPlayer extends EventEmitter {
     return getProperty<int>('playlist-count');
   }
 
-  // load a playlist file
-  // mode
-  // replace  replace current playlist
-  // append append to current playist
+  /// load a playlist file
+  /// @param `mode` ->\
+  /// `LoadPlaylistMode.replace`  replace current playlist\
+  /// `LoadPlaylistMode.append` append to current playist
   Future<void> loadPlaylist(String playlist,
       {LoadPlaylistMode mode = LoadPlaylistMode.replace}) async {
     playlist = path.joinAll([path.current, playlist]);
@@ -1327,35 +1289,34 @@ class MPVPlayer extends EventEmitter {
     return _changePlaylistPos(prev: true, mode: mode);
   }
 
-  // clear the playlist
+  /// clears the playlist
   Future clearPlaylist() {
     return command('playlist-clear', []);
   }
 
-  // remove the song at index or the current song, if index = 'current'
+  /// remove the song at index or the current song, if index = 'current'
   Future playlistRemove(index) {
     return command('playlist-remove', [index]);
   }
 
-  // Moves the song/video on position index1 to position index2
+  /// Moves the song/video on position index1 to position index2
   Future playlistMove(index1, index2) {
     return command('playlist-move', [index1, index2]);
   }
 
-  // shuffle the playlist
+  /// shuffle the playlist
   Future shuffle() {
     return command('playlist-shuffle', []);
   }
 
-  // returns the current playlist position (as a promise) 0 based
+  /// returns the current playlist position (as a promise) 0 based
   Future<int> getPlaylistPosition() {
     return getProperty<int>('playlist-pos');
   }
 
-  // jump to song in the playlist
-  //
-  // position
-  // 	the new position (0-based)
+  /// jump to song in the playlist
+  ///
+  /// @param `position` - the new position (0-based)
   Future<bool> jump(int position) async {
     Completer<bool> completer = Completer<bool>();
     // reject the promise if mpv is not running
@@ -1425,14 +1386,16 @@ class MPVPlayer extends EventEmitter {
     return completer.future;
   }
 
-  // loop
-  // int/string times
-  // 	number n - loop n times
-  // 	'inf' 	 - loop infinitely often
-  // 	'no'	 - switch loop to off
-  //
-  // if times is not set, this method will toggle the loop state, if any looping is set, either 'inf' or a fixed number it will be switched off
-  loopPlaylist(int? times) async {
+  /// loop
+  /// @param `times` {int|String} ->/
+  /// 	number n - loop n times\
+  /// 	'inf' 	 - loop infinitely often\
+  /// 	'no'	 - switch loop to off
+  ///
+  /// if times is not set, this method will toggle the loop state, if any
+  /// looping is set, either 'inf' or a fixed number it will be switched
+  /// off
+  loopPlaylist(times) async {
     // if times was set, use it. Times can be any number > 0, 'inf' and 'no'
     if (times != null) {
       return setProperty('loop-playlist', times);
@@ -1449,11 +1412,11 @@ class MPVPlayer extends EventEmitter {
   // PLAYLIST MODULE START ======>
 
   // SUBTITLE MODULE START =====>
-  // add subtitle file
-  // file path to the subtitle file
-  // flag select / auto /cached
-  // title subtitle title in the UI
-  // lang subitlte language
+  /// add subtitle file\
+  /// @param `file` - path to the subtitle file\
+  /// @param `flag` - select / auto /cached\
+  /// @param `title` - subtitle title in the UI\
+  /// @param `lang` - subitlte language
   Future addSubtitles(String file,
       {AddMediaFlag? flag, String? title, String? lang}) {
     List<String> args = [
@@ -1552,11 +1515,11 @@ class MPVPlayer extends EventEmitter {
     return socket.cycleProperty('fullscreen');
   }
 
-  // takes a screenshot
-  // option
-  // subtitles  with subtitles
-  // video  without subtitles
-  // window   the scaled mpv window
+  /// takes a screenshot
+  /// @param `option` ->\
+  /// subtitles -  with subtitles\
+  /// video - without subtitles\
+  /// window - the scaled mpv window
   Future screenshot(String file, {String? option}) {
     var args = [
       path.joinAll([path.current, file])

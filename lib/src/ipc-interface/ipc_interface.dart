@@ -1,3 +1,9 @@
+/// This module handles the communication with MPV over the IPC socket
+/// created by the MPV player
+/// It listens to the socket, parses the messages and forwards them to the
+/// mpv module
+/// It also offers methods for the communication with mpv
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -21,12 +27,12 @@ class IPCInterface extends EventEmitter {
   Map<dynamic, IPCRequest> ipcRequests = {};
   int messageId = 0;
 
-  // Thrown when the socket is closed by the other side
-  // This function properly closes the socket by destroying it
-  // Usually this will occur when MPV has crashed. The restarting is handled
-  // by the mpv module, which will again recreate a socket
-  //
-  // Event: close
+  /// Thrown when the socket is closed by the other side\
+  /// This function properly closes the socket by destroying it\
+  /// Usually this will occur when MPV has crashed. The restarting is handled\
+  /// by the mpv module, which will again recreate a socket
+  ///
+  /// `Event: close`
   void closeHandler() {
     if (debug) {
       print(
@@ -37,10 +43,10 @@ class IPCInterface extends EventEmitter {
     emit("socket:done");
   }
 
-  // Catches any error thrown by the socket and outputs it to the console if
-  // set to debug
-  //
-  // Event: error
+  /// Catches any error thrown by the socket and outputs it to the console
+  /// if set to debug
+  ///
+  /// `Event: error`
   void errHandler(e) {
     if (debug) {
       print("[MPV_DART]: Socket Error occurred");
@@ -49,17 +55,16 @@ class IPCInterface extends EventEmitter {
     emit("socket:error");
   }
 
-  // Handles the data received by MPV over the ipc socket
-  // MPV messages end with the \n character, this function splits it and for
-  // each message received
-  //
-  // Request messages sent from the module to MPV are either resolved or rejected
-  // Events are sent upward to the mpv module's event handler
-  //
-  // @param data {String}
-  // Data from the socket
-  //
-  // Event: data
+  /// Handles the data received by MPV over the ipc socket\
+  /// MPV messages end with the \n character, this function splits it and
+  /// for each message received
+  ///
+  /// Request messages sent from the module to MPV are either resolved or rejected
+  /// Events are sent upward to the mpv module's event handler
+  ///
+  /// @param `data` - Data from the socket
+  ///
+  /// `Event: data`
   void dataHandler(Uint8List data) {
     // various messages might be fetched at once
     List<String> messages = utf8.decode(data).split('\n');
@@ -98,6 +103,9 @@ class IPCInterface extends EventEmitter {
     });
   }
 
+  /// starts the socket connection
+  ///
+  /// @param `socket` {String}
   Future<void> connect(String socketPath) async {
     try {
       socket = await Socket.connect(
@@ -121,6 +129,10 @@ class IPCInterface extends EventEmitter {
     }
   }
 
+  /// Sends a command in the correct JSON format to mpv
+  ///
+  /// @param `command` {String}\
+  /// @param `args`  {List<String>}
   Future<T> command<T>(String command, {List args = const []}) {
     // command list for the JSON command {'command': commandList}
     List commandList = [command, ...args];
@@ -132,6 +144,13 @@ class IPCInterface extends EventEmitter {
     socket?.destroy();
   }
 
+  /// Sends message over the ipc socket and appends the \n character that
+  /// is required to end all messages to mpv\
+  /// Prints an error message if MPV is not running
+  ///
+  /// Not supposed to be used from outside
+  ///
+  /// @param `command` {String}
   Future<T> send<T>(List commands) async {
     Completer<T> completer = Completer<T>();
     // create the unique ID
@@ -168,12 +187,12 @@ class IPCInterface extends EventEmitter {
     return completer.future;
   }
 
-  // Sets a certain property of mpv
-  // Formats the message in the correct JSON format
-  //
-  // @param property {String}
-  // @param value {property dependant}
-  //
+  /// Sets a certain property of mpv\
+  /// Formats the message in the correct JSON format
+  ///
+  /// @param `property` {String}
+  /// @param `value`
+  ///
   Future<void> setProperty(String property, dynamic value) {
     // command list for the JSON command {'command': commandList}
     var commandList = ['set_property', property, value];
@@ -181,12 +200,12 @@ class IPCInterface extends EventEmitter {
     return send(commandList);
   }
 
-  // Adds to a certain property of mpv, for example volume
-  // Formats the message in the correct JSON format
-  //
-  // @param property {String}
-  // @param value {number}
-  //
+  /// Adds to a certain property of mpv, for example volume\
+  /// Formats the message in the correct JSON format
+  ///
+  /// @param `property` {String}
+  /// @param `value` {number}
+  ///
   Future<void> addProperty(String property, String value) {
     // command list for the JSON command {'command': commandList}
     var commandList = ['add', property, value];
@@ -194,12 +213,12 @@ class IPCInterface extends EventEmitter {
     return send(commandList);
   }
 
-  // Multiplies a certain property of mpv
-  // Formats the message in the correct JSON format
-  //
-  // @param property {String}
-  // @param value {number}
-  //
+  /// Multiplies a certain property of mpv\
+  /// Formats the message in the correct JSON format
+  ///
+  /// @param `property` {String}
+  /// @param `value` {number}
+  ///
   Future<void> multiplyProperty(String property, String value) {
     // command list for the JSON command {'command': commandList}
     var commandList = ['multiply', property, value];
@@ -207,15 +226,15 @@ class IPCInterface extends EventEmitter {
     return send(commandList);
   }
 
-  // Gets the value of a certain property of mpv
-  // Formats the message in the correct JSON format
-  //
-  // The answer comes over a JSON message which triggers an event
-  // Also resolved using promises
-  //
-  // @param property {String}
-  // @param value {number}
-  //
+  /// Gets the value of a certain property of mpv\
+  /// Formats the message in the correct JSON format
+  ///
+  /// The answer comes over a JSON message which triggers an event\
+  /// Also resolved using promises
+  ///
+  /// @param `property` {String}
+  /// @param `value` {number}
+  ///
   Future<T> getProperty<T>(String property) {
     // command list for the JSON command {'command': commandList}
     var commandList = ['get_property', property];
@@ -223,12 +242,12 @@ class IPCInterface extends EventEmitter {
     return send<T>(commandList);
   }
 
-  // Some mpv properties can be cycled, such as mute or fullscreen,
-  // in which case this works like a toggle
-  // Formats the message in the correct JSON format
-  //
-  // @param property {String}
-  //
+  /// Some mpv properties can be cycled, such as mute or fullscreen,
+  /// in which case this works like a toggle\
+  /// Formats the message in the correct JSON format
+  ///
+  /// @param `property` {String}
+  ///
   Future<void> cycleProperty(String property) {
     // command list for the JSON command {'command': commandList}
     var commandList = ['cycle', property];
@@ -236,10 +255,10 @@ class IPCInterface extends EventEmitter {
     return send(commandList);
   }
 
-  // Sends some arbitrary command to MPV
-  //
-  // @param command {String}
-  //
+  /// Sends some arbitrary command to MPV
+  ///
+  /// @param `command` {String}
+  ///
   Future<void> freeCommand(String command) async {
     try {
       socket?.write(command + '\n');

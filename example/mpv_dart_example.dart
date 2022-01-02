@@ -1,4 +1,4 @@
-import 'package:mpv_dart/src/mpv.dart';
+import 'package:mpv_dart/mpv_dart.dart';
 
 const mpvSocket = '/tmp/dart-mpv.sock';
 
@@ -6,8 +6,8 @@ void main() async {
   try {
     MPVPlayer mpvPlayer = MPVPlayer(
       audioOnly: true,
-      // debug: true,
-      // verbose: true,
+      debug: true,
+      verbose: true,
       mpvArgs: [
         "--ytdl-raw-options-set=format=140,http-chunk-size=300000",
         "--script-opts=ytdl_hook-ytdl_path=yt-dlp",

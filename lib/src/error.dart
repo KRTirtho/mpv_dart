@@ -15,20 +15,21 @@ class ErrorHandler {
     };
   }
 
-  // creates the error message JSON object
-  //
-  // @param errorCode - the errorCode for the error
-  // @param method - method this error is created/raised from
-  // @param args (optional) - arguments that method was called with
-  // @param errorMessage (optional) - specific error message
-  // @param options (options) - valid arguments for the method that raised the error
-  // 	ofthe form
-  // {
-  // 	'argument1': 'foo',
-  // 	'argument2': 'bar'
-  // }
-  //
-  // @return - JSON error object
+  /// creates the error message JSON object
+  ///
+  /// @param `errorCode` - the errorCode for the error\
+  /// @param `method` - method this error is created/raised from\
+  /// @param `args` (optional) - arguments that method was called with\
+  /// @param `errorMessage` (optional) - specific error message\
+  /// @param `options` (options) - valid arguments for the method that raised the error	of the form
+  /// ```
+  /// {
+  /// 	'argument1': 'foo',
+  /// 	'argument2': 'bar'
+  /// }
+  /// ```
+  ///
+  /// @return - JSON error object
   errorMessage(int errorCode, String method,
       {List? args, String? errorMessage, Map? options}) {
     // basic error object
