@@ -21,13 +21,13 @@ abstract class MPVEvents {
   static String timeposition = 'timeposition';
 }
 
-enum AudioFlag {
+enum AddMediaFlag {
   select,
   auto,
   cached,
 }
 
-extension AudioFlagExtension on AudioFlag {
+extension AddMediaFlagExtension on AddMediaFlag {
   get name => toString().split(".").last;
 }
 
@@ -43,7 +43,7 @@ extension SeekModeExtension on SeekMode {
     SeekMode.appendPlay: "append-play",
     SeekMode.relative: "relative",
   };
-  get name => _values[toString().split(".").last];
+  get name => _values[this];
 }
 
 enum LoadMode {
@@ -58,7 +58,7 @@ extension LoadModeExtension on LoadMode {
     LoadMode.appendPlay: "append-play",
     LoadMode.replace: "replace",
   };
-  get name => _values[toString().split(".").last];
+  get name => _values[this];
 }
 
 enum LoadPlaylistMode {
@@ -259,8 +259,10 @@ class MPVPlayer extends EventEmitter {
   // title subtitle title in the UI
   // lang subitlte language
   Future<void> addAudioTrack(
-      String file, AudioFlag? flag, String? title, String? lang) {
-    List<String> args = [file];
+      String file, AddMediaFlag? flag, String? title, String? lang) {
+    List<String> args = [
+      path.joinAll([path.current, file])
+    ];
     // add the flag if specified
     if (flag != null) {
       args = [...args, flag.name];
@@ -786,7 +788,7 @@ class MPVPlayer extends EventEmitter {
               // socket destruction and event emittion
               .then((times) {
             observeSocket.destroy();
-            emit(MPVEvents.seek, (times));
+            emit(MPVEvents.seek, null, times);
           })
               // handle any rejection of the promise
               .catchError((status) {
@@ -804,7 +806,7 @@ class MPVPlayer extends EventEmitter {
             currentTimePos = message["data"];
           } else {
             // emit a status event
-            emit(MPVEvents.status,
+            emit(MPVEvents.status, null,
                 {'property': message["name"], 'value': message["data"]});
             // output if verbose
             if (verbose) {
@@ -833,15 +835,13 @@ class MPVPlayer extends EventEmitter {
       Socket sock = await Socket.connect(
           InternetAddress(socketURI, type: InternetAddressType.unix), 0);
 
-      sock.listen(
-        (event) {
-          Map res = jsonDecode(utf8.decode(event));
-          completer.complete(res.containsKey("data") &&
-              res.containsKey("error") &&
-              res["error"] == "success");
-          sock.destroy();
-        },
-      );
+      sock.listen((event) {
+        Map res = jsonDecode(utf8.decode(event));
+        completer.complete(res.containsKey("data") &&
+            res.containsKey("error") &&
+            res["error"] == "success");
+        sock.destroy();
+      });
 
       sock.writeln(jsonEncode({
         'command': ['get_property', 'mpv-version']
@@ -1019,8 +1019,8 @@ class MPVPlayer extends EventEmitter {
       'time-pos', /* 0 */
     );
 
-    _timepositionListenerId =
-        Timer.periodic(Duration(seconds: timeUpdate * 1000), (timer) async {
+    _timepositionListenerId = Timer.periodic(
+        Duration(milliseconds: timeUpdate * 1000), (timer) async {
       bool paused = await isPaused().catchError((err) {
         if (debug) {
           print(
@@ -1035,7 +1035,7 @@ class MPVPlayer extends EventEmitter {
         }
       });
       if (!paused && currentTimePos != null) {
-        emit(MPVEvents.timeposition, currentTimePos);
+        emit(MPVEvents.timeposition, null, currentTimePos);
       }
     });
 
@@ -1447,4 +1447,168 @@ class MPVPlayer extends EventEmitter {
     }
   }
   // PLAYLIST MODULE START ======>
+
+  // SUBTITLE MODULE START =====>
+  // add subtitle file
+  // file path to the subtitle file
+  // flag select / auto /cached
+  // title subtitle title in the UI
+  // lang subitlte language
+  Future addSubtitles(String file,
+      {AddMediaFlag? flag, String? title, String? lang}) {
+    List<String> args = [
+      path.joinAll([
+        path.current,
+      ])
+    ];
+    // add the flag if specified
+    if (flag != null) {
+      args = [...args, flag.name];
+    }
+    // add the title if specified
+    if (title != null) {
+      args = [...args, title];
+    }
+    // add the language if specified
+    if (lang != null) {
+      args = [...args, lang];
+    }
+    // finally add the argument
+    return command('sub-add', args);
+  }
+
+  // delete subtitle specified by the id
+  Future removeSubtitles(id) {
+    return command('sub-remove', [id]);
+  }
+
+  // cycle through subtitles
+  Future<void> cycleSubtitles() {
+    return socket.cycleProperty('sub');
+  }
+
+  // selects subitle according to the id
+  Future<void> selectSubtitles(id) {
+    return socket.setProperty("sub", id);
+  }
+
+  // toggle subtitle visibility
+  Future<void> toggleSubtitleVisibility() {
+    return socket.cycleProperty('sub-visibility');
+  }
+
+  // shows selected subtitle
+  Future<void> showSubtitles() {
+    return socket.setProperty('sub-visibility', true);
+  }
+
+  // hides subtitles
+  Future<void> hideSubtitles() {
+    return socket.setProperty('sub-visibility', false);
+  }
+
+  // adjusts the subtitles timing
+  Future<void> adjustSubtitleTiming(int seconds) {
+    return socket.setProperty('sub-delay', seconds);
+  }
+
+  // jumps linesToSkip many lines forward in the video
+  Future subtitleSeek(int lines) {
+    return command('sub-seek', [lines]);
+  }
+
+  // scales to font size of the subtitles
+  Future<void> subtitleScale(double scale) {
+    return setProperty("sub-scale", scale);
+  }
+
+  // displays ASS subtitle calls
+  Future<void> displayASS(ass, duration, {position = 7}) async {
+    Map assCommand = {
+      'command': [
+        'expand-properties',
+        'show-text',
+        "\${osd-ass-cc/0}{\\an$position$ass",
+        duration
+      ]
+    };
+    return await commandJSON(assCommand);
+  }
+  // SUBTITLE MODULE END =====>
+
+  // VIDEO MODULE START =====>
+  // goes into fullscreen
+  Future<void> fullscreen() {
+    return socket.setProperty('fullscreen', true);
+  }
+
+  // leaves fullscreen
+  Future<void> leaveFullscreen() {
+    return socket.setProperty('fullscreen', false);
+  }
+
+  // toggles fullscreen
+  Future<void> toggleFullscreen() {
+    return socket.cycleProperty('fullscreen');
+  }
+
+  // takes a screenshot
+  // option
+  // subtitles  with subtitles
+  // video  without subtitles
+  // window   the scaled mpv window
+  Future screenshot(String file, {String? option}) {
+    var args = [
+      path.joinAll([path.current, file])
+    ];
+    if (option != null) {
+      args = [...args, option];
+    }
+    return command('screenshot-to-file', args);
+  }
+
+  /// video rotate\
+  /// degrees 90 / 180 / 270 / 360\
+  /// absolute rotation
+  Future<void> rotateVideo(int degrees) {
+    return socket.setProperty('video-rotate', degrees);
+  }
+
+  /// zooms into the image\
+  /// 0 is no zoom at all\
+  /// 1 is twice the size\
+  Future<void> zoomVideo(int factor) {
+    return socket.setProperty('video-zoom', factor);
+  }
+
+  /// adjust the brightness\
+  /// value between -100, 100
+  Future<void> brightness(double value) {
+    return socket.setProperty('brightness', value);
+  }
+
+  /// adjust the contrast\
+  /// value between -100, 100
+  Future<void> contrast(double value) {
+    return socket.setProperty('contrast', value);
+  }
+
+  /// adjust the saturation\
+  /// value between -100, 100
+  Future<void> saturation(value) {
+    return socket.setProperty('saturation', value);
+  }
+
+  /// adjust the gamma value\
+  /// value between -100, 100
+  Future<void> gamma(value) {
+    return socket.setProperty('gamma', value);
+  }
+
+  /// adjust the hue\
+  /// value between -100, 100
+  Future<void> hue(value) {
+    return socket.setProperty('hue', value);
+  }
+  // VIDEO MODULE END =====>
 }
