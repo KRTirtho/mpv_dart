@@ -5,7 +5,7 @@ class IPCRequest<T> {
   String? caller;
   IPCRequest(this.messageResolve, this.messageReject, this.args) {}
 
-  complete(value) {
+  complete(T value) {
     // get the stack trace and look for the mpv function calls
     // const stackMatch  = new Error().stack.match(/mpv.\w+\s/g);
     // get the last mpv function as the relevant caller for error handling

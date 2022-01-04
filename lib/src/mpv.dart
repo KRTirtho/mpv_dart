@@ -463,7 +463,7 @@ class MPVPlayer extends EventEmitter {
     Socket observeSocket = await Socket.connect(
         InternetAddress(socketURI, type: InternetAddressType.unix), 0);
 
-    await command<Map>('seek', [seconds.toString(), mode.name, 'exact']);
+    await command('seek', [seconds.toString(), mode.name, 'exact']);
 
     observeSocket.listen((event) {
       var messages = utf8.decode(event).split("\n");
@@ -726,13 +726,15 @@ class MPVPlayer extends EventEmitter {
                   Map msgMap = jsonDecode(message);
                   if (msgMap.containsKey("event")) {
                     // after the seek is finished the playback-restart event is emitted
-                    if (msgMap["event"] == 'playback-restart') {
+                    if (msgMap["event"] == 'playback-restart' &&
+                        !completer.isCompleted) {
                       // resolve the promise
                       completer.complete(
                           {"start": seekStartTimePos, "end": currentTimePos});
                     }
                     // when the track has changed we don't need a seek event
-                    else if (msgMap["event"] == 'tracks-changed') {
+                    else if (msgMap["event"] == 'tracks-changed' &&
+                        !completer.isCompleted) {
                       completer.completeError('Track changed after seek');
                     }
                   }
@@ -740,7 +742,7 @@ class MPVPlayer extends EventEmitter {
               });
               // reject the promise if it took to long until the playback-restart happens
               // to prevent having sockets listening forever
-              if (timeout > 10) {
+              if (timeout > 10 && !completer.isCompleted) {
                 completer.completeError('Seek event timeout');
               }
             });
@@ -837,7 +839,7 @@ class MPVPlayer extends EventEmitter {
       RegExp failRegexp =
           RegExp("Could not bind IPC (socket|pipe)", multiLine: true);
       var data = utf8.decode(event);
-      print("[MPV SUBPROCESS DATA]: ${data}");
+      if (debug || verbose) print("[MPV SUBPROCESS DATA]: ${data}");
       if (successRegexp.hasMatch(data)) {
         // mpvPlayer.stdout.removeListener
         // mpvPlayer.stderr.removeListener
@@ -1099,7 +1101,7 @@ class MPVPlayer extends EventEmitter {
 
         // check if the playlistfile exists
         FileStat fileStat = await FileStat.stat(playlist);
-        print("CHECK STAT ${playlist}");
+        if (verbose && debug) print("CHECK STAT ${playlist}");
         if (fileStat.type == FileSystemEntityType.file) {
           completer.complete();
         }
@@ -1307,6 +1309,10 @@ class MPVPlayer extends EventEmitter {
   /// shuffle the playlist
   Future shuffle() {
     return command('playlist-shuffle', []);
+  }
+
+  Future unshuffle() {
+    return command('playlist-unshuffle', []);
   }
 
   /// returns the current playlist position (as a promise) 0 based
