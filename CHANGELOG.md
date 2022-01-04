@@ -1,4 +1,4 @@
-## 1.0.0
+## 0.0.1
 
 - JSON IPC based bindings for [MPV](https://mpv.io) player
 - Starts mpv sub process for JSON-IPC socket with `start`

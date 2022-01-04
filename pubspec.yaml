@@ -4,7 +4,7 @@ version: 0.0.1
 homepage: https://github.com/KRTirtho/mpv_dart
 repository: https://github.com/KRTirtho/mpv_dart
 
-publish_to: pub.dev
+publish_to: https://pub.dev
 environment:
   sdk: '>=2.14.4 <3.0.0'
 
