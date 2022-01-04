@@ -2,6 +2,7 @@ name: mpv_dart
 description: MPV player's JSON IPC binding for Dart (Flutter)
 version: 0.0.1
 homepage: https://github.com/KRTirtho/mpv_dart
+repository: https://github.com/KRTirtho/mpv_dart
 
 publish_to: pub.dev
 environment:
