@@ -1,8 +1,9 @@
 name: mpv_dart
-description: A starting point for Dart libraries or applications.
-version: 1.0.0
+description: MPV player's JSON IPC binding for Dart (Flutter)
+version: 0.0.1
 homepage: https://github.com/KRTirtho/mpv_dart
 
+publish_to: pub.dev
 environment:
   sdk: '>=2.14.4 <3.0.0'
 
